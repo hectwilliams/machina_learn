@@ -1,10 +1,19 @@
 import pickle
+import os 
 
-with open ("lin_reg.pkl", 'rb') as f:
-    data = pickle.load(f)
+filename = "random_forest.pkl"
+file_output = os.path.join(os.path.dirname(os.path.realpath(__file__)), filename ) 
 
-    training_info = data["training"]
-    cross_val_info = data["cross_val"]
+with open (file_output, 'rb') as f:
+
+    table = pickle.load(f)
+
+    attributes = table["attributes"]
+    hyper_param = table["hyper_param"]
+    predictions = table["predictions"]
+    mse = table["mse"]
+    model = table["model"]
+
     
-    print(training_info)
-    print(cross_val_info)
+    print("mse=\n\t{}\n\nbest_param=\n\t{}\n\nfeature_important\n\t{}".format(mse, hyper_param.best_params_, attributes))
+

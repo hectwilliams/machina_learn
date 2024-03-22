@@ -1,3 +1,5 @@
+import sys 
+import os
 import pandas as pd 
 import housing_download as house_api
 import matplotlib.pyplot as plt 
@@ -11,10 +13,9 @@ from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.model_selection import cross_val_score, GridSearchCV, RandomizedSearchCV
+from scipy.stats import uniform, truncnorm 
 import pickle
-import joblib
-import sys 
 
 lin_reg = LinearRegression()
 tree_reg = DecisionTreeRegressor()
@@ -26,11 +27,6 @@ housing = house_api.load_housing_data()
 
 # stratified sampling / split 
 strat_training_set, strat_test_set = house_api.stratified_split_train_test(housing, split_ratio=0.2, random_seed=42)
-
-# plot district map
-# housing.plot( kind="scatter", x='longitude', y='latitude', colorbar=True,  colormap=colormaps["jet"] , c="median_house_value" ,marker='o', s= housing["population"]/100 , alpha = 0.3 ) # s = population size, c = color mapping to field 
-# housing.hist( column= housing.keys().to_list()[ 2: :] , bins=50, figsize=(20, 15))
-# plt.show()
 
 # copy training set 
 
@@ -61,59 +57,64 @@ some_training_labels = housing_labels.iloc[:5]
 some_training_data_prepared = full_pipeline.transform(some_training_data)
 
 models = {
-    "forest_reg": None,
+    "forest_reg": {
+        'cv': 5,
+        'random_state': 0,
+        'filename': 'random_forest',
+        'estimator': RandomForestRegressor,
+        'search_function': RandomizedSearchCV,
+        'scoring': 'neg_mean_squared_error',
+        'param': {
+            'n_estimators': [3, 10, 30],
+            'max_features': [2,3,4],
+            'max_depth': [5,10],
+            'min_samples_split': [2,5,10],
+            'min_samples_leaf': [1,2,4],
+            'bootstrap': [True, False]
+        },
+        'iter':5,
+        'verbose':0
+    },
 }
 
-cv_count = 10
-score_list = [] 
+model_stuct = models['forest_reg']
 
-for model_key in models:
+# random search
 
-    model = models[model_key]
+hyper_param_search_cv = model_stuct['search_function']( verbose=model_stuct['verbose'], n_iter = model_stuct['iter'], estimator=model_stuct['estimator']() , param_distributions=model_stuct['param'], cv =model_stuct['cv'], scoring=model_stuct['scoring'], return_train_score=True, random_state=model_stuct['random_state'])
+hyper_param_search_cv.fit(housing_prepared, housing_labels)
 
-    if model == None:
-        
-        param_grid = [
-            {'n_estimators': [3, 10, 30],'max_features': [2,4,6,8]},
-            {'bootstrap': [False], 'n_estimators': [3,10], 'max_features': [2,3,4]}
-        ]
+# inspect model
 
-        # grid search
-        grid_search = GridSearchCV(forest_reg, param_grid, cv =cv_count, scoring="neg_mean_squared_error", return_train_score=True)
+cv_results = hyper_param_search_cv.cv_results_
 
-        # train multiple combination of parameters 
-        grid_search.fit(housing_prepared, housing_labels)
+model = hyper_param_search_cv.best_estimator_
 
-        cv_results = grid_search.cv_results_
-        
-        model = grid_search.best_estimator_
+best_param = hyper_param_search_cv.best_params_
 
-        best_param = grid_search.best_params_
+feature_important = model.feature_importances_
 
-    #   generate model (i.e. fit)
-    final_predictions = model.predict(housing_test_prepared)
+# use model (i.e. deployed)
 
-    #    root mean square error 
-    final_mse = mean_squared_error(housing_test_labels, final_predictions)
-    final_mse = np.sqrt(final_mse)
+final_predictions = model.predict(housing_test_prepared)
+final_mse = mean_squared_error(housing_test_labels, final_predictions)
+final_mse = np.sqrt(final_mse)
 
-    print(final_mse)
+# attributes
+extra_attribs = ['rooms_per_household', 'population_per_household', 'bedrooms_per_household']
+cat_one_hot_attribs = list((full_pipeline.named_transformers_['cat']).categories_[0])
+attributes = num_attribs + extra_attribs + cat_one_hot_attribs
 
-    # save model 
-    save_model = {
-        "name": model_key,
-        "model": model,
-        "cross_validation": {"size": cv_count, "scores": final_mse},
-    }
+# rank attributes 
+attrib = list(zip(feature_important, attributes))
+attrib.sort(key = lambda tupe: tupe[0] , reverse=True)
 
-    score_list.append( save_model )
-
-# sort best model
-
-score_list.sort(reverse=True, key= lambda m: m['cross_validation']['scores'].mean())
+print("mse={}, best_param=\n{}\n\nfeature_important\n{}\n".format(final_mse, best_param, attrib))
 
 # save model 
 
-with open( "{}.pkl".format(model_key), "wb") as f:
-    pickle.dump(  { "training": {"predictions": final_predictions, "labels": some_training_labels, "mse": final_mse}, "cross_val": score_list}, f)
+file_output = os.path.join(os.path.dirname(os.path.realpath(__file__)), model_stuct['filename']  ) 
+
+with open( "{}.pkl".format(file_output), "wb") as file_handle:
+    pickle.dump(  { 'attributes': attrib, 'hyper_param': hyper_param_search_cv, "predictions": final_predictions , "mse": final_mse , "model": model}, file_handle)
 
