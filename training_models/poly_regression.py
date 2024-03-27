@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 import model_metrics
 from sklearn.pipeline import Pipeline 
 from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import Ridge 
 
 def plot_simple(x, y, y_pred):
     # plot 
@@ -22,9 +23,8 @@ def plot_simple(x, y, y_pred):
 
 rng = np.random.default_rng()
 
-m = 500
+m = 100
 x = 6 * rng.random(size=(m,1)) - 3
-# x.sort(axis=0) # sort random variables 
 
 noise_normal_dist = rng.standard_normal(size=(m,1)) 
 y = 0.5 * x**2 + x + 2 + noise_normal_dist
@@ -34,7 +34,8 @@ poly_features = PolynomialFeatures(degree= 2, include_bias=False)
 x_poly = poly_features.fit_transform(x)
 x_b_poly = np.c_[np.ones(shape=(m,1)), x_poly] # bias included
 
-# estimator
+## LINEAR REGRESS
+
 lin_reg = LinearRegression()
 lin_reg.fit(x_poly, y)
 
@@ -45,17 +46,44 @@ weights = np.c_[lin_reg.intercept_, lin_reg.coef_]
 y_pred = lin_reg.predict(x_poly)   # estimator compute
 # y_pred = x_b_poly.dot(weights.T) # matrix compute
 
-# plot
-plot_simple(x, y, y_pred)
+# sort random variables x with depedant values (i.e. y, y_pred)
+temp = np.c_[x, y, y_pred]
+temp[(  temp[:,0] ).argsort()]
+x = np.c_[temp[:,0]]
+y = np.c_[temp[:,1]]
+y_pred =np.c_[temp[:,2]]
 
-# learning curve
+plot_simple(x, y, y_pred)
 model_metrics.learning_curve(lin_reg, x, y)
 
-# 
+## POLYNOMIAL REGRESS
+
 polynomial_reg = Pipeline([
     # ('std_scaler', StandardScaler()),
     ("poly_features", PolynomialFeatures(degree=10, include_bias=False)),
     ("lin_reg", LinearRegression())
 ])
 
+polynomial_reg.fit(x_poly, y)
+y_pred = polynomial_reg.predict(x_poly)   # estimator compute
+
+plot_simple(x, y, y_pred)
 model_metrics.learning_curve(polynomial_reg, x, y)
+
+## Ridge Regression ( reduce model variace)
+
+## LINEAR REGRESS
+ridge_reg = Ridge(alpha=1e-05, solver="cholesky")
+ridge_reg.fit(x, y)
+y_pred = ridge_reg.predict(x)
+plot_simple(x, y, y_pred)
+model_metrics.learning_curve(ridge_reg, x, y)
+
+## POLYNOMIAL REGRESS
+polynomial_reg = Pipeline([
+    ("poly_features", PolynomialFeatures(degree=10, include_bias=False)),
+    ("ridge_reg", Ridge(alpha=1e-05, solver="cholesky"))
+])
+polynomial_reg.fit(x_poly, y)
+y_pred = polynomial_reg.predict(x_poly)  
+plot_simple(x, y, y_pred)
