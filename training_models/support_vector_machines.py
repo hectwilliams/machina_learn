@@ -30,9 +30,9 @@ def thr_function(data):
 
         y_predict = model.predict(np.c_[[x1], [x2]])[0]
 
-        id = int(y_predict)
+        id_color = int(y_predict)
 
-        data['plt'].scatter(x1,x2,marker="s", s=5 , c=colors[id], alpha=0.1 )
+        data['plt'].scatter(x1,x2,marker="s", s=5 , c=colors[id_color], alpha=0.1 )
 
         if plt_lock.locked():
             plt_lock.release()
@@ -43,13 +43,6 @@ def thr_function(data):
     
     count = count + 1
     
-    # ensures every thread
-    # if count == COLUMNS:
-        
-    # if data['x'] not in d:
-        
-        # d[data['x']] = True
-
     count_lock.release()
     
 
@@ -115,21 +108,16 @@ for data_obj in data:
     t.start()
 
 # plt.draw and plt.pause must be called on main thread 
+
 while count_done.locked() :
     
     if count == COLUMNS:
         count_done.release()
-    
+
     plt_lock.acquire()
     plt.draw()
     plt.pause(0.001)
 
-# plt.draw()
-# plt.pause(0.001)
-
-
-   
-        
 t.join()
 
 plt.ioff()
