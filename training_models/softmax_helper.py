@@ -4,7 +4,7 @@ import numpy as np
 # float_formatter = "{:.5f}".format
 # np.set_printoptions(formatter={'float_kind':float_formatter})
 
-class Decision_Boundary:
+class Decision_Boundary_Softmax:
     
     def __init__(self, x_max, y_max, model, plt_):
         self.x_max = x_max

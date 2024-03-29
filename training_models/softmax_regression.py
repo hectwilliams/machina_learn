@@ -61,7 +61,7 @@ for p_width, p_length, id in np.c_[x_new, y_predict]:
     id = int(round(id))
     plt.scatter( x=p_length, y=p_width, marker=markers[id] , c=colors[id])
 
-bound_search = softmax_helper.Decision_Boundary(max_petal_length, max_petal_width, softmax_reg, plt)
+bound_search = softmax_helper.Decision_Boundary_Softmax(max_petal_length, max_petal_width, softmax_reg, plt)
 bound_search.search_large()
 
 plt.show()
