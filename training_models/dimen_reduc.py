@@ -4,8 +4,11 @@ import os
 import sys
 import numpy as np 
 
-from sklearn.decomposition import PCA 
+from sklearn.decomposition import PCA , KernelPCA
 from matplotlib import pyplot as plt, colormaps
+from sklearn.model_selection import GridSearchCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
 
 rng = np.random.default_rng()
 
@@ -61,27 +64,23 @@ def mnist_compression_example():
 
     plt.show()
 
-def test_me():
+def kernel_pca():
+    x_train, x_test, y_train, y_test = get_mnist()
 
-    f = 10
-    Fs = 1000
-    n = 10000
+    param_grid = [
+        {
+            "kcpa__gamma": np.linspace(start = 0.03, stop=0.05, num=10),
+            "kcpa__kernel": ["rbf", "sigmoid"]
+        }
+    ]
     
-    fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
-    
-    z = rng.lognormal(size=(n,1)) 
-    y =  rng.standard_normal(size=(n,1)) # rng.random() * np.cos(2 * np.pi *f * z / Fs)
-    x =  rng.standard_normal(size=(n,1)) #   np.sin(2 * np.pi *f * z / Fs)
+    clf = Pipeline([("kcpa", KernelPCA(n_components=160)), ("log_reg", LogisticRegression())])
 
-    ax.scatter(xs=x,ys=z, zs=y)
-    # ax.scatter(xs=np.zeros(n) - 1,ys=z, zs=y)
-    # ax.scatter(xs=x,ys=z, zs=np.zeros(n) -1)
+    grid_search = GridSearchCV(estimator=clf, param_grid=param_grid, cv=3)
 
-    ax.set_xlabel('X Label')
-    ax.set_ylabel('time')
-    ax.set_zlabel('Z Label')
+    grid_search.fit(x_train, y_train)
 
-    plt.show() 
+    print("best param {}".format(grid_search.best_params_))
 
-test_me()
+# kernel_pca()
+
