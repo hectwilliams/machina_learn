@@ -17,6 +17,7 @@ from matplotlib.lines import Line2D
 from  sklearn.neighbors import KNeighborsClassifier
 import threading
 import time
+from sklearn.mixture import GaussianMixture
 
 wk_dir = os.path.join(os.path.dirname(os.path.realpath(__file__))) 
 
@@ -153,8 +154,6 @@ def dbscan_ex():
         y = xy[1]
         c = dbscan.labels_[idx]
         plt.scatter(x, y , c=colors[c])   
-    plt.draw()
-    plt.pause(0.2)
 
     # KNN  MODEL
 
@@ -252,4 +251,71 @@ def dbscan_ex():
     plt.ioff()
     plt.show()
 
-dbscan_ex()
+
+def gaussian_ex():
+    n_samples = 100
+    x, y = make_moons(n_samples=n_samples, noise=0.15)
+    gm = GaussianMixture(n_components=3, n_init=10)
+    gm.fit(x)    
+    
+    x_range = (-3.5, 3.5)
+    y_range = (-2.5, 2.5)
+    
+    # CREATE MESH 
+    # Near center loops represent dense area where esstimatee event likely occur at a location(i.e. parameter)
+
+    x_range_samples = np.linspace(start=x_range[0], stop=x_range[1], num=n_samples)
+    y_range_samples = np.linspace(start=y_range[0], stop=y_range[1], num=n_samples)
+
+    x1, x2 = np.meshgrid(x_range_samples, y_range_samples)
+    z = np.zeros(shape=(n_samples, n_samples))
+
+    min_ = 2**32
+    max_ = -min_
+
+    for row_idx in range(len(y_range_samples )):
+        for col_idx in range(len(x_range_samples)):
+            x1_sample = x_range_samples[col_idx] # x1       
+            x2_sample = y_range_samples[row_idx] # x2 
+
+            x_m = [[x1_sample, x2_sample]]
+            
+            predict_label = gm.predict(x_m)
+
+            center_loc = gm.means_[predict_label][0]
+            this_loc = np.array( [x1_sample, x2_sample]) 
+            
+
+            euclidean = np.sqrt(np.sum(np.square(center_loc - this_loc)))
+            if euclidean > max_ :
+                max_ = euclidean 
+            
+            if euclidean < min_:
+                min_ = euclidean
+
+            z[row_idx, col_idx] = euclidean
+
+    h = plt.contourf(x1 ,x2, z, np.arange(min_, max_, 0.1), alpha=0.6)
+    plt.colorbar()
+    plt.axis('scaled')
+
+    # plt samples 
+    y_predict = gm.predict(x) # hard decision/clustering
+    for x1, x2, y in np.c_[x, y_predict]:
+        y= y.astype(int)
+        plt.scatter(x1, x2, s=0.3, c=["blue", "green", "orange"][y]   )
+    
+    # plt centers
+    idx = 0  
+    for x1, x2 in gm.means_:
+        plt.scatter(x1, x2, marker="x", edgecolors ='black', c="red")
+        plt.annotate(f'({idx})',xy=(x1, x2), xytext=(5, 5), textcoords="offset points", c="black", size = 4)
+        idx += 1
+
+    plt.ylabel ('X\u2082') # subscript code \u208
+    plt.xlabel ('X\u2081')    
+    plt.show()
+
+
+
+gaussian_ex()
