@@ -126,7 +126,7 @@ class PreprocessMnist:
         self.training_set_size = len(y_train)
         self.test_set_size = len(y_test)
         
-        if load_tf_records or not tfrecords_found():
+        if load_tf_records or (not tfrecords_found()):
             for dataset_nanme in PreprocessMnist.DATASET_TABLE:
                 x, y = PreprocessMnist.DATASET_TABLE[dataset_nanme]
                 if limited_mode:
@@ -197,18 +197,20 @@ class PreprocessMnist:
         batch_dr = os.path.join(CURR_DIR, f'{__file__[:-3]}', dataset_name)
         batch_files = [dir_entry.path for dir_entry in os.scandir(batch_dr)]
         files_dataset = tf.data.TFRecordDataset(batch_files)
-        files_parsed_dataset = files_dataset.map(lambda enc_proto_record: tf.io.parse_single_example(enc_proto_record, PreprocessMnist.feature_desc) )
+        files_parsed_dataset = files_dataset.map(lambda enc_proto_record: tf.io.parse_single_example(enc_proto_record, PreprocessMnist.FEATURE_DESC), num_parallel_calls=5)
+        # print( files_parsed_dataset.batch(batch_size=10).prefetch(1))
         result_stateful = []
         
         for raw_record in files_parsed_dataset:
             label = tf.get_static_value(raw_record['feature_label_64'])
             img = tf.io.parse_tensor( serialized= raw_record['feature_image'], out_type=tf.uint8).numpy()
+
             if not result_stateful:
                 result_stateful += [[img], [label]]
             else:
                 result_stateful[0] = np.vstack((result_stateful[0], [img]))
                 result_stateful[1] = np.vstack((result_stateful[1], [label]))
-        
+        result_stateful[1] = result_stateful[1].reshape(-1)
         return result_stateful
     
     def load_data(self) -> list[tuple]:
@@ -231,18 +233,9 @@ class PreprocessMnist:
         (test_x, test_y) = self.get_data(dataset_name="test")
 
         return [ (train_x, train_y) ,(test_x, test_y) ,  (validate_x, validate_y) ]
-    
-# if __main__ == "__name__":
 
-# # peek_batch()
-# train_x, train_y = mnist_custom.get_data()
-
-# # quick check
-# print(train_x[0])
-# print("expect a {}".format( PreprocessMnist.CLASS_LABELS[train_y[0][0] ] ))
-# print(len(train_x))
-
-# plt.imshow(train_x[0],  cmap='binary')
-# plt.show()
+if __name__ == '__main__':
+    inst = PreprocessMnist()
+    x, y = inst.get_data()
 
 
