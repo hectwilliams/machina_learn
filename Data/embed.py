@@ -52,7 +52,7 @@ table = tf.lookup.StaticVocabularyTable(initializer=table_init, num_oov_buckets=
 
     # Standardize Layer
 
-regular_inputs = keras.layers.Input(shape = housing_train.shape[1:], name="standardized_data" ) # 8 channels
+regular_inputs = keras.layers.Input(shape = housing_train.shape[1:], name="non-categorical" ) # 8 channels
 
 length_percent_40_train = int(0.4 * len(housing_train)) 
 rand_indices = rng.integers(low =1, high=len(housing_train), size=(length_percent_40_train))
@@ -65,8 +65,8 @@ standardized_input = standardization(regular_inputs)
     # Embedding Layer 
 
 embedding_dimension = 2
-categories = keras.layers.Input(shape=housing_ocean_proximity_train.shape[1:], dtype=tf.string, name= "embeddings") # 1 channels
-category_to_indices = keras.layers.Lambda( function = lambda cat: table.lookup( cat  ) , output_shape=[] ) (categories)
+categories = keras.layers.Input(shape=[], dtype=tf.string, name= "categories") # 1 channels
+category_to_indices = keras.layers.Lambda( function = lambda cat: table.lookup( cat  ) , output_shape=[]) (categories)
 indices_to_embeddings = keras.layers.Embedding( input_dim= len(category_names) + num_oov_buckets , output_dim=embedding_dimension)  (category_to_indices)
 
     # Link Layers
@@ -81,6 +81,12 @@ model.compile(loss=keras.losses.mean_squared_error, optimizer= keras.optimizers.
 
 model_history = model.fit( x = [housing_train, housing_ocean_proximity_train] , y= [housing_labels_train])
 
+print(model.summary())
+
+print(model.layers)
+
     # Plot Model 
 
 keras.utils.plot_model(model, os.path.join(wk_dir, __file__ + '.png'), show_shapes=True)
+
+sys.exit()
