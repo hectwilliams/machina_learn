@@ -13,7 +13,8 @@ import sys
 import keras 
 import numpy as np
 import tensorflow as tf
-
+import threading
+from typing import Union
 
 Valid_PERCENTAGE_OF_TRAIN = 0.2
 CURR_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__))) 
@@ -80,7 +81,6 @@ def write_batch_to_file_helper(batch_id: bool, dataset_name: str, data_x: np.nda
         dataset_name:  String of dataset being evaluated (e.g. "test")
         data_x:  Multtidimensional array of feature data 
         data_y: Multidimensional array of label data
-
         
     Returns:
         None
@@ -88,10 +88,44 @@ def write_batch_to_file_helper(batch_id: bool, dataset_name: str, data_x: np.nda
     proto_filename = os.path.join(CURR_DIR, f'{__file__[:-3]}', dataset_name,  f'batch_{batch_id}.tfrecord') #  "test.tfrecord")
     with tf.io.TFRecordWriter(proto_filename) as writer:
         for i in range(len(data_x)):
-            mnist_proto = mnist_batch_feature( data_x[i], data_y[i])
+            mnist_proto = mnist_batch_feature(data_x[i], data_y[i])
             mnist_proto_encoded = mnist_proto.SerializeToString()
             writer.write(mnist_proto_encoded)
 
+def stack_dataset(dataset: Union[dict, tuple] ) -> list[np.ndarray, np.array]:
+    """Stack dataset
+    
+    
+    Args:
+        dataset: iterative or dict housing feature and label samples 
+    
+    
+    Returns:
+        Tuple of two arrays
+
+    
+    Raises:
+        ValueError on invalid dataset type
+    """
+    result_stateful = []
+    for record in dataset:
+
+        if  isinstance(record, dict):
+            label = tf.get_static_value(record['feature_label_64']) # read decoded data label
+            img = tf.io.parse_tensor( serialized= record['feature_image'], out_type=tf.uint8).numpy() # read decoded data img
+        elif isinstance(record, tuple):
+            label = tf.get_static_value(record[1]) 
+            img = record[0].numpy()[0] 
+        else:
+            raise ValueError("dataset argument type incorrect ")
+        
+        if not result_stateful:
+            result_stateful += [[img], [label]]
+        else:
+            result_stateful[0] = np.vstack((result_stateful[0], [img]))
+            result_stateful[1] = np.vstack((result_stateful[1], [label]))
+    result_stateful[1] = result_stateful[1].reshape(-1)
+    return result_stateful[0], result_stateful[1]
 
 class PreprocessMnist:
     """ PreprocessMnist preprocess mnist dataset.
@@ -106,6 +140,7 @@ class PreprocessMnist:
         validation_set_size: Number of instances in a validation set
         training_set_size: Number of instances in training set
         test_set_size: Number of instances in test set 
+        standardizer: keras layer used to standardize feature data 
     """
     CLASS_LABELS = ["T-shirt/top", "Trouser", "Pullover","Dress","Coat","Sandal","Shirt","Sneaker","Bag","Ankle boot"]
     FEATURE_DESC = {'feature_image': tf.io.FixedLenFeature([], tf.string),'feature_label_64': tf.io.FixedLenFeature([], tf.int64, default_value=0)}
@@ -121,11 +156,17 @@ class PreprocessMnist:
             limited_mode: Due to non-optimal transformation, process operates in limited mode. Max dataset size is 5000
         """
         self.batch_size = None 
-        self.number_of_batches = None 
-        self.validation_set_size = VALIDATON_SIZE
+        self.number_of_batches = None  
+        self.validation_set_size = VALIDATON_SIZE 
         self.training_set_size = len(y_train)
         self.test_set_size = len(y_test)
+        self.standardizer = keras.layers.Normalization()
         
+        # rng
+        length_percent_25_train = int(0.10 * len(x_train)) 
+        rand_indices = rng.integers(low =1, high=len(x_train), size=(length_percent_25_train))
+        self.standardizer.adapt(  x_train[rand_indices] )
+
         if load_tf_records or (not tfrecords_found()):
             for dataset_nanme in PreprocessMnist.DATASET_TABLE:
                 x, y = PreprocessMnist.DATASET_TABLE[dataset_nanme]
@@ -135,12 +176,14 @@ class PreprocessMnist:
                     y = y[:sample_size]
                 self.batch_size = int(0.05*len(x))
                 y = (lambda y_data:  tf.data.Dataset.from_tensor_slices(y_data).shuffle(buffer_size=5, seed=42).batch(batch_size=self.batch_size, drop_remainder=True)   )(y)
-                x = (lambda x_data:  tf.data.Dataset.from_tensor_slices(x_data).shuffle(buffer_size=5, seed=42).batch(batch_size=self.batch_size, drop_remainder=True)   )(x)
+                x = (lambda x_data:  tf.data.Dataset.from_tensor_slices((x_data) ).shuffle(buffer_size=5, seed=42).batch(batch_size=self.batch_size, drop_remainder=True)   )(x)
 
                 self.number_of_batches = len(y)
                 concat_xy  = list(x.concatenate(y).as_numpy_iterator())
                 for batch_index in range(self.number_of_batches):
-                    write_batch_to_file_helper(batch_index, dataset_nanme, concat_xy[batch_index], concat_xy[ batch_index + self.number_of_batches] )
+                    write_batch_to_file_helper(batch_index, dataset_nanme, concat_xy[batch_index], concat_xy[ batch_index + self.number_of_batches])
+        
+
 
     def peek_batch(self, dataset_name="training"):
         """ Peek into one of the available dataset_name directories and select a random batch file, analyzing the encoded data
@@ -188,30 +231,13 @@ class PreprocessMnist:
                 training dataset is returned; the type of dataset
                 returned is controlled by dataset_name argument 
             
-            
-            Raises:
-                NotADirectoryError if directory does not exst 
-                FileNotFoundError if there are not records for dataset identified by dataset_name
         """
 
         batch_dr = os.path.join(CURR_DIR, f'{__file__[:-3]}', dataset_name)
         batch_files = [dir_entry.path for dir_entry in os.scandir(batch_dr)]
-        files_dataset = tf.data.TFRecordDataset(batch_files)
-        files_parsed_dataset = files_dataset.map(lambda enc_proto_record: tf.io.parse_single_example(enc_proto_record, PreprocessMnist.FEATURE_DESC), num_parallel_calls=5)
-        # print( files_parsed_dataset.batch(batch_size=10).prefetch(1))
-        result_stateful = []
-        
-        for raw_record in files_parsed_dataset:
-            label = tf.get_static_value(raw_record['feature_label_64'])
-            img = tf.io.parse_tensor( serialized= raw_record['feature_image'], out_type=tf.uint8).numpy()
-
-            if not result_stateful:
-                result_stateful += [[img], [label]]
-            else:
-                result_stateful[0] = np.vstack((result_stateful[0], [img]))
-                result_stateful[1] = np.vstack((result_stateful[1], [label]))
-        result_stateful[1] = result_stateful[1].reshape(-1)
-        return result_stateful
+        tf_record_dataset = tf.data.TFRecordDataset(batch_files)  
+        tf_record_parsed_dataset = tf_record_dataset.map(lambda enc_proto_record: tf.io.parse_single_example(enc_proto_record, PreprocessMnist.FEATURE_DESC), num_parallel_calls=5) # decode protobuf record
+        return stack_dataset(tf_record_parsed_dataset)
     
     def load_data(self) -> list[tuple]:
         """Load validation, training, and test datasets
@@ -223,19 +249,61 @@ class PreprocessMnist:
         Returns:
             Tri-tuple of feature and label data
         
-        Raises:
-            Exception 
-
-            raise Exception('I know Python!')
         """
         (train_x, train_y) = self.get_data(dataset_name="training")
         (validate_x, validate_y) = self.get_data(dataset_name="validate")
         (test_x, test_y) = self.get_data(dataset_name="test")
 
         return [ (train_x, train_y) ,(test_x, test_y) ,  (validate_x, validate_y) ]
+    
+    def load_dataset(self, dataset_name="training", n_thread_workers=5, n_readers=5, batch_size=1):
+        """"Load validation, training, and test datasets using keras dataflow architecture
+
+        
+        Args:
+            dataset_name: Dataset type
+            n_thread_workers: number of async threads 
+            n_readers: number of files to
+            batch_size: batch size of packets
+
+
+        Returns:
+            Three keras datasets in the following order<train, test, validate>
+        """
+
+        def decoder_process(serial_data):
+            """Decodes serial data mapped to feature names
+            
+
+            Args:
+                serial_data: binary string of byyes
+                keys: string values used to read dict
+            
+                
+            Returns:
+                Tuple of feature and label data
+            """
+            img = tf.io.parse_tensor( serial_data['feature_image'] ,  out_type=tf.uint8)
+            label = (serial_data['feature_label_64'])
+            return img , label
+
+        batch_dr = os.path.join(CURR_DIR, f'{__file__[:-3]}', dataset_name)
+        batch_filenames = [dir_entry.path for dir_entry in os.scandir(batch_dr)]
+
+        tf_filename_dataset = tf.data.Dataset.list_files(batch_filenames)
+        
+        dataset = tf_filename_dataset.interleave(
+                    cycle_length = n_readers,
+                    map_func = lambda unique_dataset_filename: tf.data.TFRecordDataset(unique_dataset_filename)
+                                                            .map(lambda protobuf_binary_record: tf.io.parse_single_example(protobuf_binary_record, PreprocessMnist.FEATURE_DESC), num_parallel_calls= n_thread_workers)
+                                                            .map(decoder_process, num_parallel_calls=n_thread_workers)
+                                                            .shuffle(buffer_size=10)
+                                                            .batch(batch_size=batch_size, drop_remainder=False, num_parallel_calls= n_thread_workers)
+                                                            .prefetch(1)
+        )
+
+        return stack_dataset(dataset)
 
 if __name__ == '__main__':
-    inst = PreprocessMnist()
-    x, y = inst.get_data()
-
-
+    inst = PreprocessMnist(True)
+    (x, y) = inst.load_dataset()
