@@ -41,3 +41,5 @@ pd.DataFrame(history.history).plot()
 plt.grid(True)
 plt.gca().set_ylim(0,1)
 plt.savefig(  os.path.join(CURR_DIR, __file__ [:-3] + "_history" + '.png')   )
+
+
