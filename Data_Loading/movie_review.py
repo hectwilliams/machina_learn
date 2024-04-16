@@ -31,6 +31,7 @@ OPTIMIZER= "sgd"
 METRICS = ["binary_accuracy"]
 NUMBER_THREAD_WORKERS = 5
 BATCH_SIZE = 1000
+EMBEDDING_DIMENSION = 4
 
 def fetch_datasets_url():
     """Using link, download movie_review dataset into movie_review directory 
@@ -121,22 +122,52 @@ def load_datasets():
     train_dataset= shuffle_movie_review_files()
     
     text_vectorization = keras.layers.TextVectorization(standardize= "lower_and_strip_punctuation", split="whitespace",  output_sequence_length=TEXT_VECTORIZER_DIMENSION) 
-    text_vectorization.adapt(train_dataset.map(lambda batch_text, batch_label: batch_text, num_parallel_calls=NUMBER_THREAD_WORKERS))
+    text_vectorization.adapt(train_dataset.map(lambda batch_text, batch_label: batch_text, num_parallel_calls=NUMBER_THREAD_WORKERS)) # adapt to all the batches 
 
-    train_dataset = train_dataset.map(lambda batch_text, batch_label: (text_vectorization(batch_text), batch_label), num_parallel_calls=NUMBER_THREAD_WORKERS) # vectorize batches
+    def preprocess(review, label):
+        """Vectorization and Embedding on movie reviews
 
-    model = keras.models.Sequential(
-                [
-                    keras.layers.Input(shape=(4,), batch_size=BATCH_SIZE),
-                    keras.layers.Dense(300, activation= keras.activations.relu),
-                    keras.layers.Dense(200, activation= keras.activations.relu),
-                    keras.layers.Dense(100, activation= keras.activations.relu),
-                    keras.layers.Dense(1, activation= keras.activations.sigmoid)
-                ]   
-            )
+        
+        Args:
+            review: Movie review string
+            label: Binary value representing like(1) or dislike(0)
+
+            
+        Returns:
+            Two element tuple. First element is a tuple containing 
+            text-vectorized and embedded string, respectively. The last 
+            element is a boolean value
+        """
+        text_vectorization_review= keras.layers.TextVectorization(standardize= "lower_and_strip_punctuation", split="whitespace",  output_sequence_length= 1) 
+        text_vectorization_review.adapt(review)
+        text_vectorization_review_vocab = text_vectorization_review.get_vocabulary()
+        n_words_review = len(text_vectorization_review_vocab)
+        
+        embedding_review = keras.layers.Embedding(input_dim= n_words_review, output_dim=EMBEDDING_DIMENSION)
+        scaled_avg_embedding = tf.reduce_mean(embedding_review, axis=0) * np.sqrt(n_words_review)
+
+        return ((text_vectorization(review)   , scaled_avg_embedding ), label)
+    
+        # sys.exit()
+    train_dataset = train_dataset.map(preprocess, num_parallel_calls=NUMBER_THREAD_WORKERS) # vectorize batches
+    
+    # train_dataset = train_dataset.map(lambda batch_text, batch_label: (text_vectorization(batch_text), batch_label), num_parallel_calls=NUMBER_THREAD_WORKERS) # vectorize batches
+
+    embedding_input = keras.layers.Input(shape=(4,), batch_size=BATCH_SIZE)
+    movie_review_vectoerized = keras.layers.Input(shape=(4,), batch_size=BATCH_SIZE)
+    hidden2 = keras.layers.Dense(200, activation= keras.activations.relu) ( movie_review_vectoerized )
+    hidden3 = keras.layers.Dense(100, activation= keras.activations.relu) ( hidden2 )
+    concat = keras.layers.concatenate( [embedding_input, hidden3] )
+    hidden4 = keras.layers.Dense(50, activation= keras.activations.relu) ( concat )
+    hidden5 = keras.layers.Dense(20, activation= keras.activations.relu) ( hidden4 )
+    output = keras.layers.Dense(1, activation= keras.activations.sigmoid) ( hidden5 )
+    model = keras.models.Model( inputs=[ movie_review_vectoerized, embedding_input ], outputs=[ output ] )
+
     keras.utils.plot_model(model, os.path.join(CURR_DIR, f'{__file__[:-3]}' + "flow" + ".png"), show_shapes=True)
     model.compile(loss=LOSS, optimizer=OPTIMIZER, metrics=METRICS)
     model.fit(train_dataset, epochs= 4, steps_per_epoch= number_of_batches )
+    # sys.exit()
+    
 
 if __name__ == "__main__":
     fetch_datasets_url()
