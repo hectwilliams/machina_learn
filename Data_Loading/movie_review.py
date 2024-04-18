@@ -14,6 +14,8 @@ import tensorflow as tf
 import keras 
 import sys 
 import numpy as np 
+import time 
+from timeit import default_timer
 
 DATASET_URL = "https://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz"
 CURR_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)))
@@ -25,13 +27,35 @@ DATASET_TRAIN_NEG_DIR = os.path.join(DATA_TRAIN_DIR,"neg")
 DATA_TEST_DIR = os.path.join(DATASET_IMDB_PARENT_DIR, "test")
 DATASET_TEST_POS_DIR = os.path.join(DATA_TEST_DIR,"pos")
 DATASET_TEST_NEG_DIR = os.path.join(DATA_TEST_DIR,"neg")    
-TEXT_VECTORIZER_DIMENSION = 4
+TEXT_VECTORIZER_DIMENSION = 1
 LOSS = "binary_crossentropy"
 OPTIMIZER= "sgd"
-METRICS = ["binary_accuracy"]
-NUMBER_THREAD_WORKERS = 5
+METRICS = ["accuracy"] # binary_accuracy
+NUMBER_THREAD_WORKERS = 6 
 BATCH_SIZE = 1000
-EMBEDDING_DIMENSION = 4
+EMBEDDING_DIMENSION = 2
+TEXT_VECTORIZER_DIMENSION_EMBEDDING = 1
+ONE = 1
+ZERO = 0
+REVIEWS_IN_DATASET = 25000
+VALIDATION_SIZE = 15000
+TEST_SIZE = 10000
+
+options = tf.data.Options()
+options.threading.private_threadpool_size = 0 # system will find optimal
+
+text_vec_map_to_integer = keras.layers.TextVectorization(standardize= "lower_and_strip_punctuation", split="whitespace",  output_sequence_length=TEXT_VECTORIZER_DIMENSION, output_mode='int') 
+text_vec_map_to_integer_train = keras.layers.TextVectorization(standardize= "lower_and_strip_punctuation", split="whitespace",  output_sequence_length=TEXT_VECTORIZER_DIMENSION, output_mode='int') 
+text_vec_map_to_integer_test = keras.layers.TextVectorization(standardize= "lower_and_strip_punctuation", split="whitespace",  output_sequence_length=TEXT_VECTORIZER_DIMENSION, output_mode='int') 
+
+text_vect_map_to_indices = keras.layers.TextVectorization(standardize= "lower_and_strip_punctuation", split="whitespace", output_mode='int') 
+text_vect_map_to_indices_train = keras.layers.TextVectorization(standardize= "lower_and_strip_punctuation", split="whitespace", output_mode='int') 
+text_vect_map_to_indices_test = keras.layers.TextVectorization(standardize= "lower_and_strip_punctuation", split="whitespace", output_mode='int') 
+
+number_of_batches = 1
+embedding_layer =  {}
+embedding_layer_train = {}
+embedding_layer_test = {}
 
 def fetch_datasets_url():
     """Using link, download movie_review dataset into movie_review directory 
@@ -71,11 +95,50 @@ def load_datasets():
     
     Returns:
         Three tuple variables ( (training_feat, training_label), (testing_feat, testing_label), (validate_feat, validate_label))
-
-    
     """
+    def preprocess_embeddings(batch_review_vectors, batch_of_indices, batch_of_labels):
+        """Compute embeddings for batch of indices
 
-    def shuffle_movie_review_files(dataset_name= "train") -> tf.data.Dataset:
+        
+        Args:
+            batch_review_vectors: _
+            batch_of_indices: Vectoerized words mapping to vocabulary
+            batch_of_labels: _
+
+            
+        Returns:
+            Three element tuple. First and third element are passthroughs.
+            The second element will undergo embedding averaging of size  BATCH_SIZE x EMBEDDING_DIMENSION
+        """
+        embedds = embedding_layer(batch_of_indices)
+        embedds_mean = tf.cast(tf.reduce_mean(embedds, axis=1), tf.float64)
+        
+        indices_bool_cast = tf.cast(batch_of_indices , tf.bool)
+        indices_bin_digit_cast =  tf.cast(indices_bool_cast ,  tf.float64)
+        indices_length = tf.reduce_sum(indices_bin_digit_cast, axis=1 , keepdims=True)
+        sqrt_reduce_indices = tf.sqrt(indices_length)
+        rscaled_mean_embedding  = tf.math.multiply(embedds_mean, sqrt_reduce_indices) # embedds_mean * sqrt_reduce_indices_repeat_stack
+        return (batch_review_vectors, rscaled_mean_embedding), (batch_of_labels)
+    
+    def preprocess_vectorization(batch_of_reviews, batch_of_labels):
+        """Vectorization of movie reviews
+
+        
+        Args:
+            review: batch of reviews
+            label: batch of single digit binary choices like(1) or dislike(0)
+
+            
+        Returns:
+            Three element tuple. First element is batch of vectorized reviews to single 1D location.
+            The second element is vectorized batch of reviews; each review is converted to 
+            a array of indices mapping to word in a vocabulary. Last element 
+            is a batch of binary choices for a corresponding review
+        """
+        
+        return   text_vec_map_to_integer(batch_of_reviews), text_vect_map_to_indices(batch_of_reviews), batch_of_labels
+    
+    def get_datasets(dataset_name= "train") -> tf.data.Dataset:
         """Shuffles list of pos and neg mmovie review filepaths
 
         
@@ -84,91 +147,127 @@ def load_datasets():
 
 
         Returns:
-            Dataset containing movie review training instances 
+            Dataset containing movie review training instances shuffled
 
             
         Raises:
             FileNotFoundError if dataset directory does not exist 
+            ValueError if dataset_name is other then test or train
 
         """
-        if dataset_name == "train":
-            pos_dir = os.path.join(DATASET_TRAIN_POS_DIR)
-            neg_dir = os.path.join(DATASET_TRAIN_NEG_DIR)
-        
-        if dataset_name == "test":
-            pos_dir = os.path.join(DATASET_TEST_POS_DIR)
-            neg_dir = os.path.join(DATASET_TEST_NEG_DIR)
+        def files_for_dataset(name = "train") :
+            """Return files for individual dataset
+
+
+            Args:
+                name: Name of dataset
+
             
-        for dir in [pos_dir, neg_dir]:
-            if not os.path.exists(dir):
-                raise FileNotFoundError(f'{dataset_name} directory not found')
+            Returns:
+                Array of filename strings
+            
+                
+            Raises:
+                ValueError if dataset_name is other then test or train
+            
+            """
+
+            global number_of_batches
+            
+            pos_dir = ""
+            neg_dir = ""
+            
+            if name not in ["train", "test"]:
+                raise ValueError()
+            
+            if dataset_name == "train":
+                pos_dir = os.path.join(DATASET_TRAIN_POS_DIR)
+                neg_dir = os.path.join(DATASET_TRAIN_NEG_DIR)
+                number_of_batches = int(np.floor( len(os.listdir(DATASET_TRAIN_POS_DIR) + os.listdir(DATASET_TRAIN_NEG_DIR) ) / BATCH_SIZE ))
+            elif dataset_name == "test":
+                pos_dir = os.path.join(DATASET_TEST_POS_DIR)
+                neg_dir = os.path.join(DATASET_TEST_NEG_DIR)
+                number_of_batches = int(np.floor( len(os.listdir(DATASET_TEST_POS_DIR) + os.listdir(DATASET_TEST_NEG_DIR) ) / BATCH_SIZE ))
+            else:
+                raise ValueError("Only test or train values are permitted")
+                
+            for dir in [pos_dir, neg_dir]:
+                if not os.path.exists(dir):
+                    raise FileNotFoundError(f'{dataset_name} directory not found')
         
-        pos_files = [ entry.path for entry in os.scandir(pos_dir) ]
-        neg_files = [ entry.path for entry in os.scandir(neg_dir) ]
+            pos_files = [ entry.path for entry in os.scandir(pos_dir) ]
+            neg_files = [ entry.path for entry in os.scandir(neg_dir) ]
 
-        pos_dataset_files = tf.data.Dataset.list_files(pos_files)
-        neg_dataset_files = tf.data.Dataset.list_files(neg_files)
+            return     neg_files, pos_files   
         
-        pos_dataset = pos_dataset_files.map(map_func=lambda filepath:   [tf.io.read_file((filepath)), 1]    , num_parallel_calls=NUMBER_THREAD_WORKERS)
-        neg_dataset = neg_dataset_files.map(map_func=lambda filepath:   [tf.io.read_file((filepath)), 0]    , num_parallel_calls=NUMBER_THREAD_WORKERS)
-        pos_neg_dataset = pos_dataset.concatenate(neg_dataset)
+        def get_dataset(n_files, p_files):
+            """Using files Compute Dataset
+            
+            
+            Args:
+                n_files: _
+                p_files: _
+            
+            
+            Returns:
+                Dataset
+            """
 
-        return pos_neg_dataset.shuffle(buffer_size= pos_files.__len__() + neg_files.__len__() , seed=42).repeat(4).batch(batch_size=BATCH_SIZE, drop_remainder=True, num_parallel_calls=NUMBER_THREAD_WORKERS)
+            n_dataset_files = tf.data.Dataset.list_files(n_files)
+            p_dataset_files = tf.data.Dataset.list_files(p_files)
+            n_dataset = n_dataset_files.map(map_func=lambda filepath: [tf.io.read_file((filepath)), ZERO], num_parallel_calls=NUMBER_THREAD_WORKERS)
+            p_dataset = p_dataset_files.map(map_func=lambda filepath: [tf.io.read_file((filepath)), ONE], num_parallel_calls=NUMBER_THREAD_WORKERS)
+            return p_dataset.concatenate(n_dataset)
+        
+        n_files, p_files = files_for_dataset("train")
+        train_dataset = get_dataset(n_files, p_files)
+        
+        n_files, p_files = files_for_dataset("test")
+        test_dataset = get_dataset(n_files, p_files)
+        
 
-    options = tf.data.Options()
-    options.threading.private_threadpool_size = 0 # system will find optimal
+        train_dataset = train_dataset.shuffle(buffer_size= len(train_dataset), seed=42).repeat(1).batch(batch_size=BATCH_SIZE, drop_remainder=True, num_parallel_calls=NUMBER_THREAD_WORKERS)
+        test_dataset = test_dataset.shuffle(buffer_size= len(test_dataset), seed=42).repeat(1)
+        
+        validation_dataset = test_dataset.take(VALIDATION_SIZE).batch(batch_size=BATCH_SIZE, drop_remainder=True, num_parallel_calls=NUMBER_THREAD_WORKERS)
+        test_dataset = test_dataset.skip(VALIDATION_SIZE).batch(batch_size=BATCH_SIZE, drop_remainder=True, num_parallel_calls=NUMBER_THREAD_WORKERS)
+        
+        return train_dataset, test_dataset, validation_dataset
 
-    number_of_batches= int(np.floor( len(os.listdir(DATASET_TRAIN_POS_DIR) + os.listdir(DATASET_TRAIN_NEG_DIR) ) / BATCH_SIZE ))
-    train_dataset= shuffle_movie_review_files()
-    
-    text_vectorization = keras.layers.TextVectorization(standardize= "lower_and_strip_punctuation", split="whitespace",  output_sequence_length=TEXT_VECTORIZER_DIMENSION) 
-    text_vectorization.adapt(train_dataset.map(lambda batch_text, batch_label: batch_text, num_parallel_calls=NUMBER_THREAD_WORKERS)) # adapt to all the batches 
 
-    def preprocess(review, label):
-        """Vectorization and Embedding on movie reviews
+    def preprocess_vectorization_double(train_d, test_d):
+        """Vectorization of movie reviews
 
         
         Args:
-            review: Movie review string
-            label: Binary value representing like(1) or dislike(0)
+            review: batch of reviews
+            label: batch of single digit binary choices like(1) or dislike(0)
 
             
         Returns:
-            Two element tuple. First element is a tuple containing 
-            text-vectorized and embedded string, respectively. The last 
-            element is a boolean value
+            Three element tuple. First element is batch of vectorized reviews to single 1D location.
+            The second element is vectorized batch of reviews; each review is converted to 
+            a array of indices mapping to word in a vocabulary. Last element 
+            is a batch of binary choices for a corresponding review
         """
-        text_vectorization_review= keras.layers.TextVectorization(standardize= "lower_and_strip_punctuation", split="whitespace",  output_sequence_length= 1) 
-        text_vectorization_review.adapt(review)
-        text_vectorization_review_vocab = text_vectorization_review.get_vocabulary()
-        n_words_review = len(text_vectorization_review_vocab)
+
         
-        embedding_review = keras.layers.Embedding(input_dim= n_words_review, output_dim=EMBEDDING_DIMENSION)
-        scaled_avg_embedding = tf.reduce_mean(embedding_review, axis=0) * np.sqrt(n_words_review)
+        return train_d, test_d
+        
+        return   text_vec_map_to_integer(batch_of_reviews), text_vect_map_to_indices(batch_of_reviews), batch_of_labels
 
-        return ((text_vectorization(review)   , scaled_avg_embedding ), label)
+    global embedding_layer_train 
+    global embedding_layer_test 
+    global embedding_layer
+
+    train_dataset, test_dataset, valid_dataset = get_datasets()
     
-        # sys.exit()
-    train_dataset = train_dataset.map(preprocess, num_parallel_calls=NUMBER_THREAD_WORKERS) # vectorize batches
+ 
     
-    # train_dataset = train_dataset.map(lambda batch_text, batch_label: (text_vectorization(batch_text), batch_label), num_parallel_calls=NUMBER_THREAD_WORKERS) # vectorize batches
-
-    embedding_input = keras.layers.Input(shape=(4,), batch_size=BATCH_SIZE)
-    movie_review_vectoerized = keras.layers.Input(shape=(4,), batch_size=BATCH_SIZE)
-    hidden2 = keras.layers.Dense(200, activation= keras.activations.relu) ( movie_review_vectoerized )
-    hidden3 = keras.layers.Dense(100, activation= keras.activations.relu) ( hidden2 )
-    concat = keras.layers.concatenate( [embedding_input, hidden3] )
-    hidden4 = keras.layers.Dense(50, activation= keras.activations.relu) ( concat )
-    hidden5 = keras.layers.Dense(20, activation= keras.activations.relu) ( hidden4 )
-    output = keras.layers.Dense(1, activation= keras.activations.sigmoid) ( hidden5 )
-    model = keras.models.Model( inputs=[ movie_review_vectoerized, embedding_input ], outputs=[ output ] )
-
-    keras.utils.plot_model(model, os.path.join(CURR_DIR, f'{__file__[:-3]}' + "flow" + ".png"), show_shapes=True)
-    model.compile(loss=LOSS, optimizer=OPTIMIZER, metrics=METRICS)
-    model.fit(train_dataset, epochs= 4, steps_per_epoch= number_of_batches )
-    # sys.exit()
-    
-
 if __name__ == "__main__":
+    started = default_timer()
     fetch_datasets_url()
     load_datasets()
+    ended = default_timer()
+    msg = f'ELASPED RUN TIME: {ended - started}\n'
+    print(msg)
