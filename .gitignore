@@ -166,4 +166,8 @@ cython_debug/
 */preprocess/preprocess_mnist/training
 */preprocess/preprocess_mnist/validate
 
-
+# imdb review 
+*imdb.tgz
+*movie_review
+*movie_review/acllmdb/*
+*.keras
