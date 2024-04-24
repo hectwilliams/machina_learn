@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from keras.callbacks import EarlyStopping
 import sys 
 
-BATCH_SIZE = 10000
+BATCH_SIZE = 10000 # 10000
 NUM_STEPS = 50
 LOSS = keras.losses.mean_squared_error
 OPT = keras.optimizers.Adam()
@@ -85,8 +85,8 @@ def deep_recurrent_network(num_next_values_to_predict = 1):
     model_deep_rnn = keras.models.Sequential(
         [
             keras.layers.SimpleRNN(20, return_sequences=True, input_shape=[None, 1]),
-            keras.layers.SimpleRNN(20, return_sequences=True),
-            keras.layers.SimpleRNN(num_next_values_to_predict)
+            keras.layers.SimpleRNN(20),
+            keras.layers.Dense(num_next_values_to_predict)
         ]
     )
     model_deep_rnn.compile(loss=LOSS, optimizer=keras.optimizers.Adam())
@@ -106,24 +106,30 @@ def train_it(model, train_x, train_y, valid_x, valid_y):
     model.compile(loss=LOSS, optimizer=keras.optimizers.Adam())
     model.fit(train_x, train_y, epochs=EPOCHS, callbacks=[early_stopping])
     rand_index = rng.integers(low = 0, high=2000)
-    
-    sys.exit()
+    print(train_x.shape)
+    print(x_valid.shape)
+    print(x_test.shape)
     model.evaluate(valid_x, valid_y)
+
     some_time_series = x_valid[rand_index] # (50, 1)
     some_time_series = some_time_series[np.newaxis, ...] # (1, 50, 1)
     y_predict = model.predict(some_time_series)
     print(y_predict)
     y_label = y_valid[rand_index]
+
+    print(some_time_series[0].shape)
+    print(y_predict.reshape((4,1)).shape )
     
     plt.figure(1)
     plt.plot(  np.vstack ( (some_time_series[0]  , y_label[..., np.newaxis] ) )  , label="raw", c="pink")
-    plt.plot( np.array(range(NUM_STEPS, NUM_STEPS + PREDICT_NUM_NEXT_VALUES )).reshape((1,PREDICT_NUM_NEXT_VALUES)) , y_predict, label="prediction", marker="X", c="blue", markersize=2)
+    plt.plot( np.array(range(NUM_STEPS, NUM_STEPS + PREDICT_NUM_NEXT_VALUES )).reshape((1,PREDICT_NUM_NEXT_VALUES)) , y_predict, marker="X", c="blue", markersize=2)
+    plt.plot(  np.vstack ( (some_time_series[0]  , y_predict.reshape((4,1))  ) )  , label="predicts", c="green")
     plt.legend()
     plt.show()
 
-
 started = default_timer()
-data = generate_time_series(batch_size=3, num_steps= NUM_STEPS + PREDICT_NUM_NEXT_VALUES) 
+data = generate_time_series(batch_size=BATCH_SIZE, num_steps= NUM_STEPS + PREDICT_NUM_NEXT_VALUES) 
+
 x_train, y_train = data[:7000, :NUM_STEPS], data[:7000, -PREDICT_NUM_NEXT_VALUES:, 0]
 x_valid, y_valid = data[7000:9000, :NUM_STEPS], data[7000:9000, -PREDICT_NUM_NEXT_VALUES:, 0]
 x_test, y_test = data[9000:, :NUM_STEPS], data[9000:, -PREDICT_NUM_NEXT_VALUES:, 0]
