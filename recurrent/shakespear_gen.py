@@ -14,7 +14,8 @@ SHAKESPEARE_FILENAME = "shakespeare.txt"
 CHAR_ENCODING = True
 PERCENT_OF_TEXT_FOR_TRAIN = 0.9
 BATCH_SIZE = 32 
-
+RNN_UNIT = 128 
+DEBUG_ON = True
 start = default_timer()
 filepath = keras.utils.get_file(SHAKESPEARE_FILENAME, SHAKESPEARE_URL)
 
@@ -33,6 +34,59 @@ def preprocess_char_rnn(tokenizer, texts, num_of_chars):
 
     x = np.array(tokenizer.texts_to_sequences(texts)) -1
     return tf.one_hot(x, num_of_chars)
+
+def next_char(text: str, temperature: float=1.0, tokenizer:  tf.keras.preprocessing.text.Tokenizer = None, model: keras.models.Sequential = None, char_table_size: int = None)-> str:
+    """Predicts next character using RNN
+    
+    
+    Args:
+        text: 1-Dimensional text
+        temperature: Float value between 0 and 1 (inclusive)
+        tokenizer: tokenizer
+        model: Keras model
+        char_table_size: Integer value represents number of unique token elements
+        
+    
+        
+    Raises:
+        ValueError if model or char_table_size are None
+
+    
+    Returns:
+        Single character
+    """
+    if char_table_size == None or model == None or tokenizer == None:
+        raise ValueError("None value received")
+    
+    print("DEBUG:\t {}".format(text))
+    
+    x_new = preprocess_char_rnn(tokenizer, [text], char_table_size)
+    next_char_prob = model.predict(x_new)[0, -1:, :] # probability of character token
+    rescaled_logits =  tf.math.log(next_char_prob) / temperature #  log distribution
+    id_zero_based = tf.random.categorical(rescaled_logits, num_samples=1) 
+    class_id_ones_based = (id_zero_based + 1).numpy()
+    return tokenizer.sequences_to_texts(class_id_ones_based)[0]
+
+def complete_text(text: str , n_chars: int = 20, temperature:float= 1.0,  tokenizer:  tf.keras.preprocessing.text.Tokenizer = None, model: keras.models.Sequential = None, char_table_size: int = None)->str:
+    """Repeatedly calls next_char() to generate sequence
+    
+    
+    Args:
+        text: string of zero or more characters 
+        n_chars: number of characters to predict
+        temperature: Float value between 0 and 1 (inclusive)
+        tokenizer: tokenizer
+        model: Keras model
+        char_table_size: Integer value represents number of unique token elements
+    
+        
+
+    Returns
+        Sentence string
+    """
+    for _ in range(n_chars):
+        text += next_char(text, temperature, tokenizer, model, char_table_size)
+    return text 
 
 with open(filepath) as f:
     shakespeare_text = f.read() 
@@ -70,27 +124,20 @@ with open(filepath) as f:
     train_dataset = train_dataset.map(lambda x_batch, y_batch: ( tf.one_hot(x_batch, depth=number_of_unique_chars) , y_batch) )
 
     # model 
+    rnn_units = 10 if DEBUG_ON else RNN_UNIT
     model = keras.models.Sequential(
         [
-            keras.layers.GRU(128, return_sequences=True, input_shape=(None, number_of_unique_chars), dropout=0.2, recurrent_dropout=0.2),
-            keras.layers.GRU(128, return_sequences=True, input_shape=(None, number_of_unique_chars), dropout=0.2, recurrent_dropout=0.2),
-            keras.layers.TimeDistributed(keras.layers.Dense(number_of_unique_chars, activation=keras.activations.softmax))
+            keras.layers.GRU( rnn_units, return_sequences=True, input_shape=(None, number_of_unique_chars), dropout=0.2, recurrent_dropout=0.2),
+            keras.layers.GRU( rnn_units, return_sequences=True, dropout=0.2, recurrent_dropout=0.2),
+            keras.layers.TimeDistributed(
+                keras.layers.Dense(number_of_unique_chars, activation=keras.activations.softmax)
+            )
         ]
     )
     model.compile(loss="sparse_categorical_crossentropy", optimizer="adam")
-    
-    # prdiction 
-    some_string = ["How are yo"]
-    some_string_preprocessed = preprocess_char_rnn(tokenizer, some_string, number_of_unique_chars)
+    history = model.fit(train_dataset)
 
-    some_prediction_zero_based = model.predict(some_string_preprocessed)
-    some_prediction_zero_based.shape  # (1, 10, 39)
-    some_prediction_zero_based_classes_indices = (np.argmax(some_prediction_zero_based, axis=1)).astype(np.int32) 
-    
-    predicted_classes_idx = (some_prediction_zero_based_classes_indices) + 1 # changes to ones_based
-    char_keys = (np.array(list(tokenizer.word_index.keys())))
-    predicted_classes = char_keys[predicted_classes_idx] 
-    predicted_next_char = predicted_classes[0][-1]
-    print(f'Predict char after {some_string} -> [{predicted_next_char}]' )
+    s = "hi my nam"
+    s = complete_text(s,10, 1.0, tokenizer, model, number_of_unique_chars)       
 
 print(f'ELASPED TIME - {default_timer() -  start}')
