@@ -127,11 +127,10 @@ def train_it(model, train_x, train_y, valid_x, valid_y):
     plt.legend()
     plt.show()
 
-started = default_timer()
 data = generate_time_series(batch_size=BATCH_SIZE, num_steps= NUM_STEPS + PREDICT_NUM_NEXT_VALUES) 
-
 x_train, y_train = data[:7000, :NUM_STEPS], data[:7000, -PREDICT_NUM_NEXT_VALUES:, 0]
 x_valid, y_valid = data[7000:9000, :NUM_STEPS], data[7000:9000, -PREDICT_NUM_NEXT_VALUES:, 0]
 x_test, y_test = data[9000:, :NUM_STEPS], data[9000:, -PREDICT_NUM_NEXT_VALUES:, 0]
 model = deep_recurrent_network(PREDICT_NUM_NEXT_VALUES) 
 train_it(model=model, train_x=x_train, train_y=y_train, valid_x=x_valid, valid_y=y_valid)
+
