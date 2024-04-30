@@ -1,9 +1,11 @@
 absl-py==1.4.0
 array-record==0.4.1
 astunparse==1.6.3
+cartpole==0.0.1
 certifi==2024.2.2
 charset-normalizer==3.3.2
 click==8.1.7
+cloudpickle==3.0.0
 contourpy==1.2.0
 cycler==0.12.1
 dm-tree==0.1.8
@@ -16,6 +18,8 @@ google-pasta==0.2.0
 googleapis-common-protos==1.63.0
 graphviz==0.20.3
 grpcio==1.62.1
+gym==0.26.2
+gym-notices==0.0.8
 h5py==3.10.0
 idna==3.6
 importlib_metadata==7.0.2
