@@ -28,22 +28,22 @@ def func_model():
     return keras.models.Model(inputs=[encoder], outputs=[decoder])
 
 def seq_model():
-    encoder = keras.Sequential(
+    encoder =   tf.keras.Sequential(
         [
-            keras.layers.Input(shape=(28, 28)),
-            keras.layers.Flatten() ,
-            keras.layers.Dense(units=NUM_OUTER_HIDDEN_NEURONS, activation="selu", use_bias=True, kernel_initializer='random_normal', bias_initializer='zeros', name="d1"), 
-            keras.layers.Dense(units=NUM_INNER_HIDDEN_NEURONS, activation="selu", use_bias=True, kernel_initializer='random_normal', bias_initializer='zeros', name="d2") ,
+            tf.keras.layers.Input(shape=(28, 28)),
+              tf.keras.layers.Flatten() ,
+              tf.keras.layers.Dense(units=NUM_OUTER_HIDDEN_NEURONS, activation="selu", use_bias=True, kernel_initializer='random_normal', bias_initializer='zeros', name="d1"), 
+              tf.keras.layers.Dense(units=NUM_INNER_HIDDEN_NEURONS, activation="selu", use_bias=True, kernel_initializer='random_normal', bias_initializer='zeros', name="d2") ,
         ]
     )
-    decoder = keras.Sequential(
+    decoder =   tf.keras.Sequential(
         [
-            keras.layers.Dense(units=NUM_OUTER_HIDDEN_NEURONS, activation="selu", use_bias=True, input_shape=[30], kernel_initializer='random_normal', bias_initializer='zeros', name="d3" ), 
-            keras.layers.Dense(28 * 28, activation="sigmoid", use_bias=True, kernel_initializer='random_normal', bias_initializer='zeros',  name="d4"),
-            keras.layers.Reshape(target_shape=(28, 28))
+              tf.keras.layers.Dense(units=NUM_OUTER_HIDDEN_NEURONS, activation="selu", use_bias=True, input_shape=[30], kernel_initializer='random_normal', bias_initializer='zeros', name="d3" ), 
+              tf.keras.layers.Dense(28 * 28, activation="sigmoid", use_bias=True, kernel_initializer='random_normal', bias_initializer='zeros',  name="d4"),
+              tf.keras.layers.Reshape(target_shape=(28, 28))
         ]
     )
-    return keras.models.Sequential( [encoder, decoder] )
+    return   tf.keras.Sequential( [encoder, decoder] )
 
 fashion_mnist = keras.datasets.fashion_mnist
 (x_train, y_train), (x_test, y_test) = fashion_mnist.load_data()
