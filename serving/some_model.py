@@ -31,7 +31,8 @@ x_new_local = X_NEW[0:3]
 
 if __name__ == "__main__":
     
-    if os.path.isdir(MODEL_PATH):
+    if not os.path.isdir(MODEL_PATH):
+        
         np.save( os.path.join(  CURR_DIR , "my_tests.npy"), x_new_local)
         imported = tf.saved_model.load(MODEL_PATH)
         model = imported.signatures["serving_default"]
@@ -41,11 +42,19 @@ if __name__ == "__main__":
         plt.savefig(os.path.join(CURR_DIR, __file__ [:-3] + '_visualize_' +'.png'))
 
     else: 
+
         model = keras.models.clone_model (stacked_ae.stacked_autoencoder_model)
         model.compile(loss=LOSS, optimizer=OPTIMIZER, metrics=[keras.metrics.BinaryAccuracy()] )
         model.fit(X_NEW_TRAIN, X_NEW_TRAIN, epochs=1)
         model.evaluate(stacked_ae.x_valid, stacked_ae.x_valid)
-        print(model.get_weights())
+        # print(model.get_weights())
+
+        # for s in model.layers:
+        #     for l in s.layers:
+        #         print(l)
+        #         if isinstance(l, keras.layers.Dense) :
+        #             l.trainable = False 
+
         model.summary()
         tf.saved_model.save(
             model, 

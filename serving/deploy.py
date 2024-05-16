@@ -47,6 +47,8 @@ def gprc():
 def rest():
     headers = {"content-type": "application/json"}
     x = (X_NEW[0:1])
+    x = x.reshape((28, 28)) 
+    print(x.shape)
    
     json_i = json.dumps(
         {

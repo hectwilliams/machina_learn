@@ -171,3 +171,4 @@ cython_debug/
 *movie_review
 *movie_review/acllmdb/*
 *.keras
+*.npy
